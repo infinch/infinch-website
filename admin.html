@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Infinch – Admin approval</title>
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.tabs{display:flex;gap:8px;margin-bottom:14px}
+.tabs button{background:#fff;border:1px solid var(--line)} .tabs button[aria-selected=true]{background:var(--asphalt);color:#fff}
+.q{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.item{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.item img{width:100%;height:190px;object-fit:cover;display:block;background:#eee}
+.item .b{padding:10px}
+.item .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.item .acts button{padding:7px 10px;font-size:.9rem}
+.group{margin:18px 0 8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+td input{width:90px;padding:6px} td select{width:110px;padding:6px}
+</style>
+</head>
+<body>
+<header class="bar"><img class="logo" src="logo-full.png" alt="Infinch"><span id="who" style="margin-left:auto"></span><button class="dark" id="logout" hidden>Logout</button></header>
+<main>
+  <section id="login" class="panel" hidden>
+    <h2>Login</h2>
+    <p class="muted">अपना admin email डालें – login link email पर आएगा।</p>
+    <input id="email" type="email" placeholder="you@example.com">
+    <button class="primary" id="sendlink" style="margin-top:10px">Login link भेजें</button>
+    <p id="lmsg" class="muted"></p>
+  </section>
+
+  <section id="app" hidden>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-t="queue">Approval queue <span id="qn" class="pill"></span></button>
+      <button role="tab" aria-selected="false" data-t="pumps">All pumps</button>
+    </div>
+    <div id="queue"></div>
+    <div id="pumps" hidden>
+      <p class="muted">Internal view – discount, IOCL share और dealer share सिर्फ़ यहीं दिखते हैं, website पर नहीं।</p>
+      <input id="pq" placeholder="Search pump" style="max-width:320px;margin-bottom:10px">
+      <div class="scroll"><table id="ptable"></table></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const DEALER_PAGE = new URL("dealer.html", location.href).href;
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.style.display="block";setTimeout(()=>e.style.display="none",3000)}
+const $=id=>document.getElementById(id);
+
+async function boot(){
+  const {data:{session}} = await sb.auth.getSession();
+  if(!session){$("login").hidden=false;$("app").hidden=true;$("logout").hidden=true;return}
+  $("login").hidden=true;$("app").hidden=false;$("logout").hidden=false;$("who").textContent=session.user.email;
+  loadQueue(); loadPumps();
+}
+$("sendlink").onclick=async()=>{
+  const {error}=await sb.auth.signInWithOtp({email:$("email").value.trim(),options:{emailRedirectTo:location.href.split("#")[0]}});
+  $("lmsg").textContent=error?("Link नहीं गया: "+error.message):"Email check करें और link पर click करें।";
+};
+$("logout").onclick=async()=>{await sb.auth.signOut();boot()};
+sb.auth.onAuthStateChange(()=>boot());
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  $("queue").hidden=b.dataset.t!=="queue";$("pumps").hidden=b.dataset.t!=="pumps";
+});
+
+async function loadQueue(){
+  const {data,error}=await sb.from("admin_review_queue").select("*").order("ro_code").order("created_at");
+  if(error){$("queue").innerHTML=`<p>Queue नहीं खुली: ${esc(error.message)}. क्या आपका email admins table में है?</p>`;return}
+  $("qn").textContent=data.length;
+  if(!data.length){$("queue").innerHTML=`<div class="panel">कोई pending item नहीं। नए uploads यहाँ आएँगे।</div>`;return}
+  const groups={}; data.forEach(r=>(groups[r.ro_code]??=[]).push(r));
+  $("queue").innerHTML=Object.entries(groups).map(([code,items])=>`
+    <div class="group"><h3 style="margin:0">${esc(items[0].ro_name)} (${code})</h3>
+      <button class="ok" data-all="${code}">इस pump की सारी photos approve</button></div>
+    <div class="q">${items.map(card).join("")}</div>`).join("");
+}
+function card(r){
+  const ver = r.key_verified?'<span class="pill ok">Dealer link</span>':'<span class="pill">Unverified</span>';
+  if(r.item_type==="AREA") return `<div class="item"><div class="b">
+      <span class="pill">Area</span> ${ver}<p class="area-plate" style="font-size:1.6rem">${esc(r.detail)}</p>
+      <p class="muted">${esc(r.submitted_by)} · ${new Date(r.created_at).toLocaleString("en-IN")}</p>
+      <div class="acts"><button class="ok" data-a="area:${r.id}:Approved">Approve area</button>
+      <button class="bad" data-a="area:${r.id}:Rejected">Reject</button></div></div></div>`;
+  const far = r.distance_from_ro_m!=null && r.distance_from_ro_m>300;
+  const dist = r.distance_from_ro_m==null?'<span class="pill">No GPS</span>':`<span class="pill ${far?"bad":"ok"}">${r.distance_from_ro_m} m from pump</span>`;
+  return `<div class="item"><a href="${photoUrl(r.storage_path)}" target="_blank" rel="noopener"><img loading="lazy" alt="${esc(r.detail)}" src="${photoUrl(r.storage_path)}"></a>
+    <div class="b"><b>${esc(r.detail)}</b> ${ver} ${dist}<p class="muted">${esc(r.submitted_by)}</p>
+    <div class="acts"><button class="ok" data-a="photo:${r.id}:Approved">Approve</button>
+    <button class="dark" data-a="photo:${r.id}:Cover">Approve as cover</button>
+    <button class="bad" data-a="photo:${r.id}:Rejected">Reject</button></div></div></div>`;
+}
+$("queue").addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b) return; b.disabled=true;
+  let res;
+  if(b.dataset.all){ res=await sb.from("ro_photos").update({status:"Approved"}).eq("ro_code",+b.dataset.all).eq("status","Pending") }
+  else if(b.dataset.a){
+    const [kind,id,st]=b.dataset.a.split(":");
+    if(kind==="area") res=await sb.from("area_submissions").update({status:st}).eq("id",+id);
+    else if(st==="Cover") res=await sb.from("ro_photos").update({status:"Approved",is_cover:true}).eq("id",+id);
+    else res=await sb.from("ro_photos").update({status:st}).eq("id",+id);
+  }
+  if(res&&res.error){toast("नहीं हुआ: "+res.error.message);b.disabled=false;return}
+  toast("Saved"); loadQueue(); loadPumps();
+});
+
+let pumps=[];
+async function loadPumps(){
+  const {data,error}=await sb.from("admin_pricing").select("*").order("ro_name");
+  if(error){$("ptable").innerHTML=`<tr><td>${esc(error.message)}</td></tr>`;return}
+  pumps=data; renderPumps($("pq").value);
+}
+function renderPumps(q){
+  q=(q||"").toLowerCase();
+  const rows=pumps.filter(p=>!q||(p.ro_name+" "+p.ro_code+" "+p.district).toLowerCase().includes(q));
+  $("ptable").innerHTML=`<tr><th>Pump</th><th>Class</th><th>Your area (sqft)</th><th>Area used</th><th>Listing</th>
+    <th>Monthly fee</th><th>₹/sqft</th><th>Discount / authority</th><th>IOCL share</th><th>Dealer share</th><th>Dealer link</th></tr>`+
+  rows.map(p=>`<tr><td><b>${esc(p.ro_name)}</b><br><span class="muted">${p.ro_code} · ${esc(p.district)} · ${esc(p.ro_type)}</span></td>
+    <td>${esc(p.class_of_market)} / ${esc(p.city_class)}</td>
+    <td><input type="number" min="0" value="${p.admin_area_sqft??""}" data-area="${p.ro_code}"><button class="dark" data-save="${p.ro_code}" style="padding:5px 8px;margin-top:4px">Save</button></td>
+    <td>${p.area_sqft?Number(p.area_sqft).toLocaleString("en-IN"):'<span class="pill">None</span>'}</td>
+    <td><select data-list="${p.ro_code}">${["Draft","Live","Booked","Paused"].map(s=>`<option ${s===p.listing_status?"selected":""}>${s}</option>`).join("")}</select></td>
+    <td>${inr(p.monthly_license_fee)}</td><td>${p.effective_rate_per_sqft??""}</td>
+    <td>${p.area_sqft?`${Math.round(Math.max(p.discount_upto_250_pct,p.discount_above_250_pct)*100)}% · ${esc(p.discount_authority)}`:""}</td>
+    <td>${inr(p.omc_share_monthly)}</td><td>${inr(p.dealer_share_monthly)}</td>
+    <td><button class="primary" data-copy="${esc(DEALER_PAGE+"?ro="+p.ro_code+"&k="+p.upload_key)}" style="padding:5px 8px">Copy link</button></td></tr>`).join("");
+}
+$("pq").addEventListener("input",e=>renderPumps(e.target.value));
+$("ptable").addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.copy){await navigator.clipboard.writeText(b.dataset.copy);toast("Dealer link copied – WhatsApp पर भेजें");return}
+  if(b.dataset.save){
+    const v=document.querySelector(`input[data-area="${b.dataset.save}"]`).value;
+    const {error}=await sb.from("ro_master").update({admin_area_sqft:v?+v:null}).eq("ro_code",+b.dataset.save);
+    toast(error?("नहीं हुआ: "+error.message):"Area saved – rate अपने-आप बदल गया"); loadPumps();
+  }
+});
+$("ptable").addEventListener("change",async e=>{
+  const s=e.target.closest("select[data-list]"); if(!s) return;
+  const {error}=await sb.from("ro_master").update({listing_status:s.value}).eq("ro_code",+s.dataset.list);
+  toast(error?("नहीं हुआ: "+error.message):"Listing: "+s.value);
+});
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Infinch – Pump photo & area upload</title>
+<link rel="icon" type="image/png" href="favicon-32.png">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+.pump{padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;background:#fff}
+.pump:hover,.pump:focus-visible{background:#FFF8DC}
+.cat{border-top:1px dashed var(--line);padding:12px 0}
+.cat label{font-weight:600;display:block;margin-bottom:6px}
+.thumbs img{width:72px;height:72px;object-fit:cover;border-radius:6px;margin:4px 4px 0 0;border:1px solid var(--line)}
+#list{max-height:60vh;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.sticky{position:sticky;bottom:0;background:var(--forecourt);padding:12px 0}
+</style>
+</head>
+<body>
+<header class="bar"><img class="logo" src="logo-full.png" alt="Infinch"><span style="margin-left:auto">Pump की photo और खाली जगह upload करें</span></header>
+<main>
+  <section id="pick">
+    <h2>अपना pump चुनें</h2>
+    <input id="q" placeholder="Pump का नाम, code या district लिखें" aria-label="Search pump">
+    <p class="muted" id="count"></p>
+    <div id="list" role="list"></div>
+  </section>
+
+  <section id="detail" hidden>
+    <button class="dark" id="back" type="button">‹ दूसरा pump चुनें</button>
+    <div class="panel" style="margin-top:12px">
+      <h2 id="d-name"></h2>
+      <div id="d-info" class="muted"></div>
+      <p id="d-status"></p>
+      <a id="d-map" target="_blank" rel="noopener">Google Maps पर देखें</a>
+    </div>
+
+    <form id="form" class="panel">
+      <h3>1. खाली जगह (area)</h3>
+      <div class="grid2">
+        <input id="area" type="number" min="1" step="1" inputmode="numeric" placeholder="कितनी जगह? जैसे 1000">
+        <select id="unit"><option value="sqft">sq ft</option><option value="sqm">sq meter</option></select>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <select id="space"><option value="Vacant">खुली जगह (Vacant)</option><option value="Built-up">बना हुआ कमरा/shed (Built-up)</option></select>
+        <input id="who" placeholder="आपका नाम / mobile" required>
+      </div>
+
+      <h3 style="margin-top:18px">2. Photos</h3>
+      <p class="muted">Photo खींचते समय pump पर ही रहें – location अपने-आप जुड़ती है। Photo का नाम बदलने की ज़रूरत नहीं।</p>
+      <div id="cats"></div>
+
+      <div class="sticky">
+        <button class="primary" id="send" type="submit" style="width:100%">Approval के लिए भेजें</button>
+        <p id="progress" class="muted" aria-live="polite"></p>
+      </div>
+    </form>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const CATS = [
+  ["FRONT","Pump सामने से (पूरा canopy दिखे)",1],["OFFER","दी जाने वाली खाली जगह",2],["ROAD","सामने की सड़क",1],
+  ["DRONE","ऊपर से (drone) – अगर है",1],["WATER","पीने का पानी",1],["TOILET","Toilet",1],
+  ["PARKING","Parking / और खुली जगह",2],["EV","EV charger / battery-swap की जगह",2],["EXTRA","कोई और सुविधा",5]];
+const params = new URLSearchParams(location.search);
+const KEY = params.get("k") || "";
+let pumps = [], current = null, files = {};
+
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.style.display="block";setTimeout(()=>e.style.display="none",3500)}
+
+async function loadPumps(){
+  const {data,error} = await sb.from("ro_directory").select("*").order("ro_name");
+  if(error){document.getElementById("count").textContent="Pump list नहीं खुली: "+error.message;return}
+  pumps = data; render("");
+  const ro = params.get("ro"); if(ro){const p=pumps.find(x=>String(x.ro_code)===ro); if(p) open(p)}
+}
+function render(q){
+  q=q.toLowerCase().trim();
+  const rows=pumps.filter(p=>!q||(p.ro_name+" "+p.ro_code+" "+p.district+" "+p.address).toLowerCase().includes(q));
+  document.getElementById("count").textContent=rows.length+" pumps";
+  document.getElementById("list").innerHTML=rows.map(p=>`<div class="pump" role="listitem" tabindex="0" data-c="${p.ro_code}">
+    <b>${esc(p.ro_name)}</b> <span class="muted">(${p.ro_code})</span><br>
+    <span class="muted">${esc(p.district)} · ${esc(p.address)}</span>
+    ${p.area_status==="Approved"?'<span class="pill ok">Area approved</span>':''}
+    ${p.pending_photos>0?`<span class="pill">${p.pending_photos} pending</span>`:''}</div>`).join("");
+}
+document.getElementById("q").addEventListener("input",e=>render(e.target.value));
+document.getElementById("list").addEventListener("click",e=>{const d=e.target.closest(".pump");if(d)open(pumps.find(p=>String(p.ro_code)===d.dataset.c))});
+document.getElementById("list").addEventListener("keydown",e=>{if(e.key==="Enter"){const d=e.target.closest(".pump");if(d)open(pumps.find(p=>String(p.ro_code)===d.dataset.c))}});
+document.getElementById("back").onclick=()=>{document.getElementById("detail").hidden=true;document.getElementById("pick").hidden=false};
+
+function open(p){
+  current=p; files={};
+  document.getElementById("pick").hidden=true; document.getElementById("detail").hidden=false;
+  document.getElementById("d-name").textContent=p.ro_name+" ("+p.ro_code+")";
+  document.getElementById("d-info").textContent=[p.company,p.address,p.district,p.pin_code].filter(Boolean).join(", ");
+  document.getElementById("d-status").innerHTML = p.area_status==="Approved"
+    ? `Approved area: <span class="area-plate">${Number(p.offered_area_sqft).toLocaleString("en-IN")} sq ft</span>`
+    : `<span class="pill">Area अभी नहीं डाली गई</span>`;
+  document.getElementById("d-status").innerHTML += ` <span class="pill ok">${p.approved_photos} photos live</span>`;
+  document.getElementById("d-map").href=`https://www.google.com/maps?q=${p.latitude},${p.longitude}`;
+  document.getElementById("cats").innerHTML=CATS.map(([c,label,max])=>`<div class="cat">
+    <label for="f-${c}">${label} <span class="muted">(max ${max})</span></label>
+    <input id="f-${c}" type="file" accept="image/*" ${max>1?"multiple":""} capture="environment" data-c="${c}" data-max="${max}">
+    <div class="thumbs" id="t-${c}"></div></div>`).join("");
+  document.querySelectorAll("#cats input[type=file]").forEach(inp=>inp.addEventListener("change",()=>{
+    const c=inp.dataset.c, max=+inp.dataset.max; files[c]=[...inp.files].slice(0,max);
+    document.getElementById("t-"+c).innerHTML=files[c].map(f=>`<img alt="" src="${URL.createObjectURL(f)}">`).join("");
+  }));
+  window.scrollTo(0,0);
+}
+
+function getGPS(){return new Promise(res=>{if(!navigator.geolocation)return res(null);
+  navigator.geolocation.getCurrentPosition(p=>res(p.coords),()=>res(null),{enableHighAccuracy:true,timeout:8000})})}
+async function compress(file){
+  const img=await createImageBitmap(file); const s=Math.min(1,1600/Math.max(img.width,img.height));
+  const cv=document.createElement("canvas"); cv.width=Math.round(img.width*s); cv.height=Math.round(img.height*s);
+  cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+  return new Promise(r=>cv.toBlob(r,"image/jpeg",0.82));
+}
+
+document.getElementById("form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const area=+document.getElementById("area").value, unit=document.getElementById("unit").value,
+        space=document.getElementById("space").value, who=document.getElementById("who").value.trim();
+  const all=Object.entries(files).flatMap(([c,list])=>list.map((f,i)=>({c,f,slot:i+1})));
+  if(!area && !all.length){toast("Area डालें या कम से कम एक photo चुनें");return}
+  const btn=document.getElementById("send"), prog=document.getElementById("progress"); btn.disabled=true;
+  try{
+    prog.textContent="Location ले रहे हैं…"; const gps=await getGPS();
+    if(area>0){
+      const {error}=await sb.rpc("submit_area",{p_ro_code:current.ro_code,p_key:KEY,p_area:area,p_unit:unit,p_space_type:space,p_name:who});
+      if(error) throw error;
+    }
+    let n=0;
+    for(const {c,f,slot} of all){
+      prog.textContent=`Photo ${++n} / ${all.length} upload हो रही है…`;
+      const blob=await compress(f);
+      const path=`${current.ro_code}/${c}/${Date.now()}-${crypto.randomUUID()}.jpg`;
+      const up=await sb.storage.from(INFINCH.PHOTO_BUCKET).upload(path,blob,{contentType:"image/jpeg"});
+      if(up.error) throw up.error;
+      const {error}=await sb.rpc("register_photo",{p_ro_code:current.ro_code,p_key:KEY,p_category:c,p_slot:slot,
+        p_path:path,p_lat:gps?gps.latitude:null,p_lon:gps?gps.longitude:null,p_name:who});
+      if(error) throw error;
+    }
+    prog.textContent="भेज दिया। Approval के बाद website पर दिखेगा।"; toast("भेज दिया – approval pending");
+    document.getElementById("form").reset(); open(current);
+  }catch(err){ prog.textContent="नहीं भेजा गया: "+(err.message||err)+". Internet check करके दोबारा भेजें।" }
+  finally{ btn.disabled=false }
+});
+loadPumps();
+</script>
+</body>
+</html>
