@@ -24,7 +24,7 @@
 .filters label{display:flex;gap:6px;align-items:center;background:var(--navy2);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:8px 10px;color:#EDEEEA}
 .hero{
   margin:0 0 20px;position:relative;border-radius:0;padding:64px 26px;
-  background:linear-gradient(180deg, rgba(20,27,46,0.55), rgba(20,27,46,0.94)), url('images/hero-1.png');
+  background:linear-gradient(180deg, rgba(20,27,46,0.55), rgba(20,27,46,0.94)), url('hero-1.png');
   background-size:cover;background-position:center;
   margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);padding-left:calc(50vw - 50% + 20px);padding-right:calc(50vw - 50% + 20px);
 }
@@ -50,7 +50,7 @@ body::before{
 }
 body.glow-on::before{opacity:1}
 .zonebar{
-  margin:0 0 30px;background:linear-gradient(180deg, rgba(20,27,46,0.4), rgba(20,27,46,0.85)), url('images/zone-1.png');
+  margin:0 0 30px;background:linear-gradient(180deg, rgba(20,27,46,0.4), rgba(20,27,46,0.85)), url('zone-1.png');
   background-size:cover;background-position:center;
   margin-left:calc(50% - 50vw);margin-right:calc(50% - 50vw);padding:44px calc(50vw - 50% + 20px);
 }
@@ -92,10 +92,10 @@ dialog .gal img{width:100%;height:130px;object-fit:cover;border-radius:6px}
   <div class="layout"><div id="map"></div><div id="cards"><p class="muted">Loading spaces…</p></div></div>
 
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:30px 0">
-    <img src="images/hero-1.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
-    <img src="images/hero-2.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
-    <img src="images/zone-1.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
-    <img src="images/zone-2.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+    <img src="hero-1.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+    <img src="hero-2.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+    <img src="zone-1.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
+    <img src="zone-2.png" style="width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid rgba(255,255,255,0.1)">
   </div>
 
   <section style="margin-top:36px">
@@ -158,7 +158,7 @@ dialog .gal img{width:100%;height:130px;object-fit:cover;border-radius:6px}
 <script src="config.js"></script>
 <script>
 const map=L.map("map").setView([29.15,76.9],10);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19,subdomains:"abcd",attribution:"© OpenStreetMap © CARTO"}).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
 const layer=L.layerGroup().addTo(map);
 let rows=[];
 const wa=(r)=>`https://wa.me/${INFINCH.WHATSAPP_NUMBER}?text=${encodeURIComponent(`Infinch enquiry: ${r.ro_name} (${r.ro_code}), ${r.area_sqft} sq ft`)}`;
